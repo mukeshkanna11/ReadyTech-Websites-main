@@ -30,7 +30,6 @@ import {
 import {
   SiNodedotjs,
   SiMongodb,
-  SiOpenai,
   SiGoogleads,
   SiMeta,
 } from "react-icons/si";
@@ -1742,7 +1741,7 @@ function TemplateC() {
   },
   {
     name: "OpenAI",
-    icon: <SiOpenai className="text-5xl text-emerald-400" />,
+    icon: <FaRobot className="text-5xl text-emerald-400" />,
   },
   {
     name: "Google Ads",
