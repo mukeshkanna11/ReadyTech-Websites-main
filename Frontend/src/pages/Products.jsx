@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { Helmet } from "react-helmet-async";
 
@@ -26,6 +27,7 @@ import {
   FaTimes,
   FaRobot,
   FaStar,
+  FaArrowLeft,
 } from "react-icons/fa";
 
 /* =========================================================
@@ -35,77 +37,524 @@ import {
 
 const CRM_PRODUCT_URL = "https://crmreadytechsolutions.in";
 const GROWTH_PRODUCT_URL = "https://readytech-growth-suit.vercel.app";
+// TODO: set the ERP product URL (Access Product shows "not configured" until then)
+const ERP_PRODUCT_URL = "";
 
 /* =========================================================
-   CRM PLANS
+   PRICING PLANS
+   Each product with a `pricing` config gets a Plan Details modal.
+   Comparison values: true = ✓, null = —, string = shown as-is.
 ========================================================= */
 
-const CRM_PLANS = [
+const API_BASE_URL =
+  import.meta.env.MODE === "development"
+    ? "http://localhost:5000/api"
+    : "https://readytech-websites.onrender.com/api";
+
+/* ---------- ERP + CRM Combo ---------- */
+
+const COMBO_LIMITS = [
+  { key: "users", label: "Users", icon: <FaUsers /> },
+  { key: "companies", label: "Companies / Branches", icon: <FaGlobe /> },
+  { key: "warehouses", label: "Warehouses", icon: <FaBoxes /> },
+  { key: "pipelines", label: "Sales Pipelines", icon: <FaChartLine /> },
+  { key: "ai", label: "AI Points / month", icon: <FaRobot /> },
+];
+
+// TODO: confirm aiFeatures / support / savings copy before going live
+const COMBO_PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: "₹2,999",
+    price: "₹6,999",
     period: "/month",
-    idealFor: "Small teams starting to organize leads and sales.",
-    highlights: [
-      "Up to 5 team members",
-      "1 sales pipeline",
-      "Capture leads from 5 sources",
-      "5 ready-to-use email templates",
-      "Essential CRM, automation & reports",
-    ],
-    ai: "50 AI points / month",
-    aiNote: "Approx. 500K AI tokens",
+    idealFor: "Small businesses running sales and operations from one place.",
+    limits: { users: "5", companies: "1", warehouses: "1", pipelines: "1", ai: "150" },
+    ai: "Essential AI assistance",
+    perks: ["Email support", "One subscription instead of two"],
   },
   {
     id: "professional",
     name: "Professional",
-    price: "₹5,999",
+    price: "₹13,999",
     period: "/month",
-    idealFor: "Growing teams managing multiple sales processes.",
+    idealFor: "Growing teams with multiple branches and warehouses.",
     popular: true,
-    highlights: [
-      "Up to 15 team members",
-      "3 sales pipelines",
-      "Unlimited lead sources",
-      "25 email templates",
-      "Advanced CRM, automation & reports",
-    ],
-    ai: "150 AI points / month",
-    aiNote: "Approx. 1.5M AI tokens",
+    limits: { users: "15", companies: "3", warehouses: "3", pipelines: "3", ai: "500" },
+    ai: "AI insights & smart automation",
+    perks: ["Priority email & chat support", "One subscription instead of two"],
   },
   {
     id: "business",
     name: "Business",
-    price: "₹11,999",
+    price: "₹27,999",
     period: "/month",
-    idealFor: "Established businesses with larger sales teams.",
-    highlights: [
-      "Up to 50 team members",
-      "10 sales pipelines",
-      "Unlimited lead sources",
-      "Unlimited email templates",
-      "Advanced & custom capabilities",
-    ],
-    ai: "400 AI points / month",
-    aiNote: "Approx. 4M AI tokens",
+    idealFor: "Established businesses scaling across locations.",
+    limits: { users: "50", companies: "10", warehouses: "10", pipelines: "10", ai: "1,200" },
+    ai: "Advanced AI insights & automation",
+    perks: ["Priority support + guided onboarding", "One subscription instead of two"],
   },
   {
     id: "enterprise",
     name: "Enterprise",
     price: "Custom",
     period: "",
-    idealFor: "Large organizations needing a tailored setup.",
-    highlights: [
-      "Custom number of team members",
-      "Unlimited sales pipelines",
-      "Custom features & limits",
-      "Built around your workflows",
-    ],
-    ai: "Custom AI allocation",
-    aiNote: "Sized to your usage",
+    idealFor: "Large organizations needing tailored limits and setup.",
+    limits: { users: "Custom", companies: "Custom", warehouses: "Custom", pipelines: "Unlimited", ai: "Custom" },
+    ai: "Custom AI allocation & workflows",
+    perks: ["Dedicated account manager", "Custom pricing for your scale"],
   },
 ];
+
+const COMBO_MODULES = ["CRM", "Sales", "Inventory", "Finance", "Purchases", "Analytics"];
+
+const COMBO_PRICING = {
+  label: "ERP + CRM",
+  title: "ERP + CRM Combo Plans",
+  heading: "One platform for sales and operations",
+  intro: `Every Combo plan includes both the ERP and CRM core modules — ${COMBO_MODULES.join(", ")} — in a single subscription. AI points are credits used whenever you use the built-in AI features.`,
+  summaryNote: "Includes ERP + CRM core modules",
+  notes: ["Prices exclude applicable taxes. Our team will confirm your setup before activation."],
+  limits: COMBO_LIMITS,
+  plans: COMBO_PLANS,
+  comparison: [
+    { section: "Included Modules" },
+    ...COMBO_MODULES.map((label) => ({ label, values: [true, true, true, true] })),
+    { section: "Plan Limits" },
+    ...COMBO_LIMITS.map(({ key, label }) => ({ label, values: COMBO_PLANS.map((p) => p.limits[key]) })),
+    { section: "Extras" },
+    { label: "AI Features", values: COMBO_PLANS.map((p) => p.ai) },
+    { label: "Support", values: COMBO_PLANS.map((p) => p.perks[0]) },
+    { label: "Savings", values: COMBO_PLANS.map((p) => p.perks[1]) },
+  ],
+};
+
+/* ---------- Digital Marketing SaaS (Growth Suite) ---------- */
+
+const SAAS_LIMITS = [
+  { key: "users", label: "Users", icon: <FaUsers /> },
+  { key: "workspaces", label: "Workspaces", icon: <FaLayerGroup /> },
+  { key: "keywords", label: "Keyword Tracking", icon: <FaBullseye /> },
+  { key: "social", label: "Social Platforms", icon: <FaGlobe /> },
+  { key: "posts", label: "Post Capacity", icon: <FaCalendarCheck /> },
+];
+
+const SAAS_PLANS = [
+  {
+    id: "saas-starter",
+    name: "SaaS Starter",
+    price: "₹3,999",
+    period: "/month",
+    limits: { users: "2", workspaces: "1", keywords: "10", social: "2", posts: "30" },
+    ai: "150 AI Points / month",
+    aiNote: "Approx. 1.5M token budget • Top-up available",
+    perks: [
+      "Basic SEO",
+      "AI Marketing Assistant",
+      "Meta Ads Integration",
+      "Basic AI Content Generation",
+      "Basic Workflow Automation",
+    ],
+  },
+  {
+    id: "saas-growth",
+    name: "SaaS Growth",
+    price: "₹7,999",
+    period: "/month",
+    limits: { workspaces: "1", keywords: "50", social: "4", posts: "100" },
+    ai: "400 AI Points / month",
+    aiNote: "Approx. 4M token budget • Top-up available",
+    perks: [
+      "Everything in Starter",
+      "Advanced SEO",
+      "Google Ads Integration",
+      "CRM Integration",
+      "Competitor Monitoring: 3",
+      "AI Competitor Insights",
+      "AI Campaign Analysis",
+      "Weekly + Monthly AI Reports",
+    ],
+  },
+  {
+    id: "saas-professional",
+    name: "SaaS Professional",
+    price: "₹14,999",
+    period: "/month",
+    limits: { keywords: "200", social: "5+", posts: "300" },
+    ai: "1,000 AI Points / month",
+    aiNote: "Approx. 10M token budget • Top-up available",
+    perks: [
+      "Everything in Growth",
+      "AI-powered Content Calendar",
+      "Competitor Monitoring: 10",
+      "AI Trend / Predictive Insights",
+      "White-label Reports",
+      "Advanced AI Marketing Features",
+    ],
+  },
+  {
+    id: "saas-enterprise",
+    name: "SaaS Enterprise",
+    price: "Custom",
+    period: "",
+    limits: { users: "Custom", workspaces: "Custom", keywords: "Custom", social: "Unlimited / Custom", posts: "Custom" },
+    ai: "Custom AI Allocation",
+    perks: [
+      "Everything in Professional",
+      "Custom limits",
+      "Custom integrations, API & workflows",
+      "Custom reporting",
+      "Custom support",
+    ],
+  },
+];
+
+const SAAS_PRICING = {
+  label: "Digital Marketing SaaS",
+  title: "Digital Marketing SaaS Plans",
+  heading: "AI-powered marketing software for your team",
+  intro: "Software-only SaaS subscription. AI points are credits used whenever you use the built-in AI features, backed by the token budget shown on each plan.",
+  summaryNote: "Software-only SaaS subscription",
+  notes: [
+    "Software-only SaaS subscription. Human-managed marketing services are separate.",
+    "Ad spend is NOT included.",
+    "AI usage warning at 80% of your monthly AI points. AI top-up available for Starter, Growth and Professional.",
+  ],
+  limits: SAAS_LIMITS,
+  plans: SAAS_PLANS,
+  comparison: [
+    { section: "Plan Limits" },
+    ...SAAS_LIMITS.map(({ key, label }) => ({ label, values: SAAS_PLANS.map((p) => p.limits[key]) })),
+    { label: "Competitor Monitoring", values: [null, "3", "10", true] },
+    { section: "AI Allocation" },
+    { label: "AI Points / month", values: ["150", "400", "1,000", "Custom"] },
+    { label: "Token Budget", values: ["≈ 1.5M", "≈ 4M", "≈ 10M", "Custom"] },
+    { label: "AI Usage Warning", values: ["80%", "80%", "80%", null] },
+    { label: "AI Top-up", values: [true, true, true, null] },
+    { section: "SEO & Content" },
+    { label: "SEO", values: ["Basic", "Advanced", "Advanced", true] },
+    { label: "AI Content Generation", values: ["Basic", true, true, true] },
+    { label: "AI-powered Content Calendar", values: [null, null, true, true] },
+    { section: "AI Marketing" },
+    { label: "AI Marketing Assistant", values: [true, true, true, true] },
+    { label: "AI Competitor Insights", values: [null, true, true, true] },
+    { label: "AI Campaign Analysis", values: [null, true, true, true] },
+    { label: "AI Trend / Predictive Insights", values: [null, null, true, true] },
+    { label: "Advanced AI Marketing Features", values: [null, null, true, true] },
+    { section: "Integrations & Reporting" },
+    { label: "Meta Ads Integration", values: [true, true, true, true] },
+    { label: "Google Ads Integration", values: [null, true, true, true] },
+    { label: "CRM Integration", values: [null, true, true, true] },
+    { label: "Workflow Automation", values: ["Basic", true, true, "Custom"] },
+    { label: "AI Reports", values: [null, "Weekly + Monthly", "Weekly + Monthly", true] },
+    { label: "White-label Reports", values: [null, null, true, true] },
+    { label: "Custom Integrations, API & Reporting", values: [null, null, null, true] },
+    { label: "Custom Support", values: [null, null, null, true] },
+  ],
+};
+
+/* ---------- ERP SaaS ---------- */
+
+const ERP_LIMITS = [
+  { key: "users", label: "Users", icon: <FaUsers /> },
+  { key: "companies", label: "Companies / Branches", icon: <FaGlobe /> },
+  { key: "warehouses", label: "Warehouses", icon: <FaBoxes /> },
+];
+
+const ERP_PLANS = [
+  {
+    id: "erp-starter",
+    name: "ERP Starter",
+    price: "₹4,999",
+    period: "/month",
+    priceNote: "or ₹59,988/year",
+    limits: { users: "5", companies: "1", warehouses: "1" },
+    ai: "100 AI Points / month",
+    aiNote: "Approx. 1M tokens • Top-up available",
+    perks: [
+      "Basic dashboard & inventory",
+      "Basic Tax/GST",
+      "Basic workflow automation",
+      "Daily backup",
+      "Email support",
+    ],
+  },
+  {
+    id: "erp-professional",
+    name: "ERP Professional",
+    price: "₹9,999",
+    period: "/month",
+    popular: true,
+    limits: { users: "15", companies: "3", warehouses: "3" },
+    ai: "300 AI Points / month",
+    aiNote: "Approx. 3M tokens • Top-up available",
+    perks: [
+      "Advanced dashboard & inventory",
+      "HR, attendance & leave",
+      "API access",
+      "AI business insights",
+      "Email + chat support, standard SLA",
+    ],
+  },
+  {
+    id: "erp-business",
+    name: "ERP Business",
+    price: "₹19,999",
+    period: "/month",
+    limits: { users: "50", companies: "10", warehouses: "10" },
+    ai: "800 AI Points / month",
+    aiNote: "Approx. 8M tokens • Top-up available",
+    perks: [
+      "Advanced + custom dashboard",
+      "Payroll & advanced HR",
+      "Custom reports & advanced projects",
+      "AI forecasting / predictive insights",
+      "Priority support & SLA",
+    ],
+  },
+  {
+    id: "erp-enterprise",
+    name: "ERP Enterprise",
+    price: "Custom",
+    period: "",
+    limits: { users: "Custom", companies: "Unlimited", warehouses: "Unlimited" },
+    ai: "Custom AI Points",
+    aiNote: "Custom token budget",
+    perks: [
+      "Custom limits",
+      "Unlimited / custom infrastructure",
+      "Enterprise inventory",
+      "Dedicated support & custom SLA",
+    ],
+  },
+];
+
+const ALL = [true, true, true, true];
+
+const ERP_PRICING = {
+  label: "ERP SaaS",
+  title: "ERP SaaS Plans",
+  heading: "Run your business operations from one ERP",
+  intro: "Cloud ERP subscription for inventory, purchasing, sales, finance, HR and projects. AI points are credits used whenever you use the built-in AI features, backed by the token budget shown on each plan.",
+  summaryNote: "ERP SaaS subscription",
+  notes: [
+    "ERP Starter is also available at ₹59,988/year.",
+    "AI usage warning at 80% of your monthly AI points. AI top-up available for Starter, Professional and Business.",
+  ],
+  limits: ERP_LIMITS,
+  plans: ERP_PLANS,
+  comparison: [
+    { section: "Core & Setup" },
+    { label: "Core ERP", values: ALL },
+    { label: "Dashboard & KPIs", values: ["Basic", "Advanced", "Advanced + Custom", "Custom"] },
+    { label: "Company / Branch Management", values: ["1", "3", "10", "Unlimited"] },
+    { label: "Users", values: ["5", "15", "50", "Custom"] },
+    { label: "Roles & Permissions", values: ALL },
+    { section: "Masters & Inventory" },
+    { label: "Customer Management", values: ALL },
+    { label: "Vendor Management", values: ALL },
+    { label: "Product / Item Master", values: ALL },
+    { label: "Inventory", values: ["Basic", "Advanced", "Advanced", "Enterprise"] },
+    { label: "Multi-Warehouse", values: ALL },
+    { label: "Warehouses", values: ["1", "3", "10", "Unlimited"] },
+    { section: "Purchase & Sales" },
+    { label: "Purchase", values: ALL },
+    { label: "Sales", values: ALL },
+    { label: "Quotation & Sales Order", values: ALL },
+    { label: "Invoice", values: ALL },
+    { label: "Payment Tracking", values: ALL },
+    { section: "Finance" },
+    { label: "Expense", values: ["Basic", true, "Advanced", "Custom"] },
+    { label: "Accounting Integration", values: ["Optional", true, true, true] },
+    { label: "Tax / GST", values: ["Basic", "Advanced", "Advanced", "Custom"] },
+    { label: "Financial Reports", values: ALL },
+    { section: "HR & Projects" },
+    { label: "HR / Employee", values: [null, "Basic", "Advanced", "Custom"] },
+    { label: "Payroll", values: [null, "Optional", true, "Custom"] },
+    { label: "Attendance", values: [null, true, true, "Custom"] },
+    { label: "Leave", values: [null, true, true, "Custom"] },
+    { label: "Project Management", values: [null, "Basic", "Advanced", "Custom"] },
+    { section: "Automation, Reports & Integrations" },
+    { label: "Workflow Automation", values: ["Basic", "Advanced", "Advanced", "Custom"] },
+    { label: "Reports & Analytics", values: ["Basic", "Advanced", "Advanced", "Custom"] },
+    { label: "Custom Reports", values: [null, "Limited", true, true] },
+    { label: "API Access", values: [null, true, true, true] },
+    { label: "Third-party Integrations", values: ["Limited", "Standard", "Advanced", "Custom"] },
+    { section: "Platform & Support" },
+    { label: "Mobile Responsive", values: ALL },
+    { label: "Mobile App", values: [null, "Optional", "Optional", "Custom"] },
+    { label: "Data Export", values: ALL },
+    { label: "Backup", values: ["Daily", "Daily", "Daily", "Custom"] },
+    { label: "Support", values: ["Email", "Email + Chat", "Priority", "Dedicated"] },
+    { label: "SLA", values: [null, "Standard", "Priority", "Custom"] },
+    { section: "AI" },
+    { label: "AI Assistant", values: ALL },
+    { label: "AI Document / Data Summaries", values: ALL },
+    { label: "AI Business Insights", values: [null, true, true, true] },
+    { label: "AI Forecasting / Predictive Insights", values: [null, null, true, "Custom"] },
+    { label: "AI Workflow Assistance", values: ["Basic", "Advanced", "Advanced", "Custom"] },
+    { label: "AI Points / month", values: ["100", "300", "800", "Custom"] },
+    { label: "Token Budget", values: ["1M", "3M", "8M", "Custom"] },
+    { label: "AI Usage Warning", values: ["80%", "80%", "80%", "Custom"] },
+    { label: "AI Top-up", values: ["Available", "Available", "Available", "Custom"] },
+  ],
+};
+
+/* ---------- CRM SaaS ---------- */
+
+const CRM_LIMITS = [
+  { key: "users", label: "Users", icon: <FaUsers /> },
+  { key: "pipelines", label: "Sales Pipelines", icon: <FaChartLine /> },
+  { key: "leadSources", label: "Lead Sources", icon: <FaBullseye /> },
+  { key: "emailTemplates", label: "Email Templates", icon: <FaFileInvoiceDollar /> },
+];
+
+const CRM_PLANS = [
+  {
+    id: "crm-starter",
+    name: "CRM Starter",
+    price: "₹2,999",
+    period: "/month",
+    priceNote: "or ₹35,988/year",
+    limits: { users: "5", pipelines: "1", leadSources: "5", emailTemplates: "5" },
+    ai: "50 AI Points / month",
+    aiNote: "Approx. 500K tokens • Top-up available",
+    perks: ["Basic CRM dashboard", "5 custom fields", "Limited integrations", "Daily backup", "Email support"],
+  },
+  {
+    id: "crm-professional",
+    name: "CRM Professional",
+    price: "₹5,999",
+    period: "/month",
+    popular: true,
+    limits: { users: "15", pipelines: "3", leadSources: "Unlimited", emailTemplates: "25" },
+    ai: "150 AI Points / month",
+    aiNote: "Approx. 1.5M tokens • Top-up available",
+    perks: ["Advanced CRM dashboard", "20 custom fields", "API access", "Standard integrations", "Email + chat support, standard SLA"],
+  },
+  {
+    id: "crm-business",
+    name: "CRM Business",
+    price: "₹11,999",
+    period: "/month",
+    limits: { users: "50", pipelines: "10", leadSources: "Unlimited", emailTemplates: "Unlimited" },
+    ai: "400 AI Points / month",
+    aiNote: "Approx. 4M tokens • Top-up available",
+    perks: ["Advanced + custom dashboard", "Unlimited custom fields", "API access", "Advanced integrations", "Priority support & SLA"],
+  },
+  {
+    id: "crm-enterprise",
+    name: "CRM Enterprise",
+    price: "Custom",
+    period: "",
+    limits: { users: "Custom", pipelines: "Unlimited", leadSources: "Unlimited", emailTemplates: "Unlimited" },
+    ai: "Custom AI Points",
+    aiNote: "Custom token budget",
+    perks: ["Custom limits", "Unlimited custom fields", "Custom integrations", "Dedicated support & custom SLA"],
+  },
+];
+
+// TODO: rows with `values: null` are awaiting the CRM table values and stay hidden until filled
+const CRM_ROWS = [
+  { section: "Dashboard & Leads" },
+  { label: "CRM Dashboard", values: ["Basic", "Advanced", "Advanced + Custom", "Custom"] },
+  { label: "Lead Management", values: null },
+  { label: "Lead Capture Forms", values: null },
+  { label: "Lead Sources", values: ["5", "Unlimited", "Unlimited", "Unlimited"] },
+  { section: "Contacts & Deals" },
+  { label: "Contact Management", values: null },
+  { label: "Company / Account Management", values: null },
+  { label: "Deal / Opportunity Management", values: null },
+  { label: "Sales Pipeline", values: ["1", "3", "10", "Unlimited"] },
+  { label: "Pipeline Stages", values: null },
+  { label: "Sales Forecasting", values: null },
+  { section: "Activities & Communication" },
+  { label: "Activity Management", values: null },
+  { label: "Tasks & Follow-ups", values: null },
+  { label: "Calendar Integration", values: null },
+  { label: "Email Integration", values: null },
+  { label: "Email Templates", values: ["5", "25", "Unlimited", "Unlimited"] },
+  { label: "Email Campaigns", values: null },
+  { label: "SMS / WhatsApp Integration", values: null },
+  { label: "Call / Communication Logs", values: null },
+  { label: "Customer Support / Tickets", values: null },
+  { label: "Customer Interaction History", values: null },
+  { label: "Notes & Attachments", values: null },
+  { section: "Customization & Automation" },
+  { label: "Custom Fields", values: ["5", "20", "Unlimited", "Unlimited"] },
+  { label: "Custom Modules", values: null },
+  { label: "Workflow Automation", values: null },
+  { label: "Lead Assignment Rules", values: null },
+  { label: "Approval Workflows", values: null },
+  { section: "Reports & Analytics" },
+  { label: "Reports & Analytics", values: null },
+  { label: "Custom Reports", values: null },
+  { label: "Sales Performance Reports", values: null },
+  { label: "Conversion Analytics", values: null },
+  { section: "Users & Integrations" },
+  { label: "User Roles & Permissions", values: null },
+  { label: "Users", values: ["5", "15", "50", "Custom"] },
+  { label: "Territory / Team Management", values: null },
+  { label: "API Access", values: [null, true, true, true] },
+  { label: "Third-party Integrations", values: ["Limited", "Standard", "Advanced", "Custom"] },
+  { section: "Platform & Support" },
+  { label: "Mobile Responsive", values: null },
+  { label: "Mobile App", values: null },
+  { label: "Data Import / Export", values: null },
+  { label: "Backup", values: ["Daily", "Daily", "Daily", "Custom"] },
+  { label: "Support", values: ["Email", "Email + Chat", "Priority", "Dedicated"] },
+  { label: "SLA", values: [null, "Standard", "Priority", "Custom"] },
+  { section: "AI" },
+  { label: "AI Sales Assistant", values: null },
+  { label: "AI Lead Qualification", values: null },
+  { label: "AI Email / Message Drafting", values: null },
+  { label: "AI Meeting / Call Summary", values: null },
+  { label: "AI Customer Insights", values: null },
+  { label: "AI Lead Scoring", values: null },
+  { label: "AI Sales Forecasting", values: null },
+  { label: "AI Follow-up Suggestions", values: null },
+  { label: "AI Workflow Assistance", values: null },
+  { label: "AI Points / Month", values: ["50", "150", "400", "Custom"] },
+  { label: "Approx. Token Budget", values: ["500K", "1.5M", "4M", "Custom"] },
+  { label: "AI Usage Warning", values: ["80%", "80%", "80%", "Custom"] },
+  { label: "AI Top-up", values: ["Available", "Available", "Available", "Custom"] },
+];
+
+const CRM_PRICING = {
+  label: "CRM SaaS",
+  title: "CRM SaaS Plans",
+  heading: "Manage leads, deals and customers in one CRM",
+  intro: "Cloud CRM subscription for your sales team. AI points are credits used whenever you use the built-in AI features, backed by the token budget shown on each plan.",
+  summaryNote: "CRM SaaS subscription",
+  notes: [
+    "CRM Starter is also available at ₹35,988/year.",
+    "AI usage warning at 80% of your monthly AI points. AI top-up available for Starter, Professional and Business.",
+  ],
+  limits: CRM_LIMITS,
+  plans: CRM_PLANS,
+  // hide empty sections and rows still awaiting values
+  comparison: CRM_ROWS.filter((row, i, rows) =>
+    row.section ? rows.slice(i + 1).find((r) => r.section || r.values)?.values : row.values
+  ),
+};
+
+/* ---------- Enquiry form ---------- */
+
+const ENQUIRY_FIELDS = [
+  { name: "name", label: "Full Name", autoComplete: "name", required: true },
+  { name: "company", label: "Company Name", autoComplete: "organization", required: true },
+  { name: "email", label: "Work Email", type: "email", autoComplete: "email", required: true },
+  { name: "phone", label: "Phone Number", type: "tel", autoComplete: "tel", required: true },
+  { name: "city", label: "City / Location", autoComplete: "address-level2" },
+  { name: "users", label: "Number of Users", type: "number", min: 1 },
+];
+
+const EMPTY_ENQUIRY = { name: "", company: "", email: "", phone: "", city: "", users: "", message: "" };
+
+const INPUT_CLASS =
+  "w-full px-4 py-3 text-sm text-white placeholder-gray-500 transition border rounded-xl border-white/10 bg-white/[0.04] focus:outline-none focus:border-cyan-400/50 focus:bg-white/[0.06]";
+
+const limitValue = (plan, key) => plan.limits[key] ?? "—";
 
 /* =========================================================
    PRODUCT DATA
@@ -122,7 +571,7 @@ const products = [
     image:
       "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1600&q=80",
     url: CRM_PRODUCT_URL,
-    plans: CRM_PLANS,
+    pricing: COMBO_PRICING,
     icon: <FaLayerGroup />,
     gradient: "from-cyan-400 via-blue-500 to-purple-500",
 
@@ -187,6 +636,7 @@ const products = [
     image:
       "https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1600&q=80",
     url: GROWTH_PRODUCT_URL,
+    pricing: SAAS_PRICING,
     icon: <FaRocket />,
     gradient: "from-purple-400 via-fuchsia-500 to-pink-500",
 
@@ -237,6 +687,130 @@ const products = [
         description:
           "Streamline repetitive workflows and improve operational efficiency.",
         icon: <FaCogs />,
+      },
+    ],
+  },
+
+  {
+    id: "erp-saas",
+    badge: "Business Operations Platform",
+    title: "ReadyTech ERP",
+    shortTitle: "ERP SaaS",
+    description:
+      "A cloud ERP to run inventory, purchasing, sales, finance, HR and projects across your companies, branches and warehouses — with built-in AI assistance.",
+    image:
+      "https://images.unsplash.com/photo-1553413077-190dd305871c?auto=format&fit=crop&w=1600&q=80",
+    url: ERP_PRODUCT_URL,
+    pricing: ERP_PRICING,
+    icon: <FaBoxes />,
+    gradient: "from-emerald-400 via-teal-500 to-cyan-500",
+
+    features: [
+      "Company & Branch Management",
+      "Multi-Warehouse Inventory",
+      "Purchase & Sales Management",
+      "Invoicing & Payment Tracking",
+      "Tax/GST & Financial Reports",
+      "HR, Payroll & Attendance",
+      "Workflow Automation",
+      "AI Business Insights",
+    ],
+
+    modules: [
+      {
+        title: "Inventory",
+        description:
+          "Manage items and stock across one or more warehouses.",
+        icon: <FaBoxes />,
+      },
+      {
+        title: "Purchase & Sales",
+        description:
+          "Handle vendors, purchases, quotations, sales orders and invoices.",
+        icon: <FaShoppingCart />,
+      },
+      {
+        title: "Finance & GST",
+        description:
+          "Track payments and expenses, manage Tax/GST and view financial reports.",
+        icon: <FaFileInvoiceDollar />,
+      },
+      {
+        title: "HR & Payroll",
+        description:
+          "Manage employees, attendance, leave and payroll.",
+        icon: <FaUserTie />,
+      },
+      {
+        title: "Projects & Workflows",
+        description:
+          "Organize projects and automate routine business workflows.",
+        icon: <FaCogs />,
+      },
+      {
+        title: "AI Insights",
+        description:
+          "Use AI for business insights, data summaries and workflow assistance.",
+        icon: <FaRobot />,
+      },
+    ],
+  },
+
+  {
+    id: "crm-saas",
+    badge: "Customer Relationship Platform",
+    title: "ReadyTech CRM",
+    shortTitle: "CRM SaaS",
+    description:
+      "A cloud CRM to manage leads, contacts, deals and sales pipelines in one place — with built-in AI assistance for your sales team.",
+    image:
+      "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1600&q=80",
+    url: CRM_PRODUCT_URL,
+    pricing: CRM_PRICING,
+    icon: <FaHandshake />,
+    gradient: "from-blue-400 via-indigo-500 to-violet-500",
+
+    features: [
+      "Lead Management",
+      "Contact & Account Management",
+      "Deal & Pipeline Management",
+      "Email Templates & Integration",
+      "Activities, Tasks & Follow-ups",
+      "Workflow Automation",
+      "Reports & Analytics",
+      "AI Sales Assistant",
+    ],
+
+    modules: [
+      {
+        title: "Leads",
+        description: "Capture leads from multiple sources and track them in one place.",
+        icon: <FaBullseye />,
+      },
+      {
+        title: "Contacts & Accounts",
+        description: "Keep every contact, company and interaction organized.",
+        icon: <FaUsers />,
+      },
+      {
+        title: "Deals & Pipelines",
+        description: "Move opportunities through your sales pipelines stage by stage.",
+        icon: <FaChartLine />,
+      },
+      {
+        title: "Activities",
+        description: "Manage tasks, follow-ups and calendar activity for your team.",
+        icon: <FaCalendarCheck />,
+      },
+      {
+        title: "Automation",
+        description: "Automate routine sales workflows and lead handling.",
+        icon: <FaCogs />,
+      },
+      {
+        title: "AI Assistance",
+        description: "Use AI to support your sales team's everyday work.",
+        icon: <FaRobot />,
       },
     ],
   },
@@ -292,7 +866,7 @@ const ModuleCard = ({ item }) => (
   </motion.div>
 );
 
-const PlanCard = ({ plan, productId }) => (
+const PlanCard = ({ plan, pricing, onChoose }) => (
   <div
     className={`relative flex flex-col p-6 border rounded-2xl backdrop-blur-xl ${
       plan.popular
@@ -307,19 +881,30 @@ const PlanCard = ({ plan, productId }) => (
       </span>
     )}
 
-    <h4 className="text-lg font-bold text-white">{plan.name}</h4>
-    <p className="mt-1 text-sm leading-6 text-gray-400">{plan.idealFor}</p>
+    <span className="self-start px-2.5 py-1 text-[11px] font-semibold tracking-wide uppercase border rounded-full text-cyan-300 border-cyan-400/20 bg-cyan-400/10">
+      {pricing.label}
+    </span>
+
+    <h4 className="mt-3 text-lg font-bold text-white">{plan.name}</h4>
+    {plan.idealFor && (
+      <p className="mt-1 text-sm leading-6 text-gray-400">{plan.idealFor}</p>
+    )}
 
     <div className="mt-5">
       <span className="text-3xl font-extrabold text-white">{plan.price}</span>
-      {plan.period && (
-        <span className="text-sm text-gray-500">{plan.period}</span>
-      )}
+      {plan.period && <span className="text-sm text-gray-500">{plan.period}</span>}
+      {plan.priceNote && <p className="mt-1 text-xs text-gray-500">{plan.priceNote}</p>}
     </div>
 
-    <div className="mt-6 space-y-3">
-      {plan.highlights.map((item) => (
-        <FeatureItem key={item}>{item}</FeatureItem>
+    <div className="mt-6 space-y-2.5">
+      {pricing.limits.map((limit) => (
+        <div key={limit.key} className="flex items-center justify-between gap-3 text-sm">
+          <span className="flex items-center gap-2 text-gray-400">
+            <span className="text-cyan-400">{limit.icon}</span>
+            {limit.label}
+          </span>
+          <span className="font-semibold text-right text-white">{limitValue(plan, limit.key)}</span>
+        </div>
       ))}
     </div>
 
@@ -327,25 +912,246 @@ const PlanCard = ({ plan, productId }) => (
       <FaRobot className="flex-shrink-0 mt-1 text-purple-300" />
       <div>
         <p className="text-sm font-semibold text-white">{plan.ai}</p>
-        <p className="text-xs text-gray-400">{plan.aiNote}</p>
+        {plan.aiNote && <p className="mt-0.5 text-xs text-gray-400">{plan.aiNote}</p>}
       </div>
     </div>
 
-    <a
-      href={`/contact?product=${productId}&plan=${plan.id}`}
-      className={`inline-flex items-center justify-center gap-2 px-5 py-3 mt-6 font-semibold transition rounded-xl hover:scale-[1.02] ${
-        plan.popular
-          ? "text-black bg-gradient-to-r from-cyan-400 to-blue-500"
-          : "text-white border border-white/10 bg-white/5 hover:bg-white/10"
-      }`}
-    >
-      {plan.price === "Custom" ? "Contact Sales" : "Choose Plan"}
-      <FaArrowRight className="text-sm" />
-    </a>
+    <div className="mt-4 space-y-2">
+      {plan.perks.map((perk) => (
+        <FeatureItem key={perk}>{perk}</FeatureItem>
+      ))}
+    </div>
+
+    <div className="pt-6 mt-auto">
+      <button
+        onClick={() => onChoose(plan)}
+        className={`inline-flex items-center justify-center w-full gap-2 px-5 py-3 font-semibold transition rounded-xl hover:scale-[1.02] ${
+          plan.popular
+            ? "text-black bg-gradient-to-r from-cyan-400 to-blue-500"
+            : "text-white border border-white/10 bg-white/5 hover:bg-white/10"
+        }`}
+      >
+        Choose Plan
+        <FaArrowRight className="text-sm" />
+      </button>
+    </div>
   </div>
 );
 
-const PlanModal = ({ product, onClose }) => {
+const ComparisonCell = ({ value }) => {
+  if (value === true) return <FaCheckCircle className="mx-auto text-cyan-400" />;
+  if (value == null) return <span className="text-gray-600">—</span>;
+  return value;
+};
+
+const ComparisonTable = ({ pricing }) => (
+  <div className="mt-12">
+    <h4 className="text-xl font-bold text-white">Detailed Feature Comparison</h4>
+    <p className="mt-2 text-sm text-gray-500">Compare every plan side by side.</p>
+
+    <div className="mt-6 overflow-x-auto border rounded-2xl border-white/10">
+      <table className="w-full min-w-[720px] text-sm text-left">
+        <thead>
+          <tr className="border-b border-white/10 bg-white/[0.04]">
+            <th className="p-4 font-semibold text-gray-300">Feature</th>
+            {pricing.plans.map((p) => (
+              <th
+                key={p.id}
+                className={`p-4 font-semibold text-center ${p.popular ? "text-cyan-300 bg-cyan-400/[0.06]" : "text-white"}`}
+              >
+                {p.name}
+                <span className="block mt-0.5 text-xs font-normal text-gray-400">
+                  {p.price}{p.period}
+                </span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {pricing.comparison.map((row) =>
+            row.section ? (
+              <tr key={row.section} className="bg-white/[0.02]">
+                <td colSpan={pricing.plans.length + 1} className="px-4 py-2 text-xs font-semibold tracking-widest uppercase text-cyan-400">
+                  {row.section}
+                </td>
+              </tr>
+            ) : (
+              <tr key={row.label} className="border-t border-white/5">
+                <td className="p-4 text-gray-400">{row.label}</td>
+                {pricing.plans.map((p, i) => (
+                  <td key={p.id} className={`p-4 text-center text-gray-200 ${p.popular ? "bg-cyan-400/[0.04]" : ""}`}>
+                    <ComparisonCell value={row.values[i]} />
+                  </td>
+                ))}
+              </tr>
+            )
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+const EnquiryForm = ({ plan, pricing, onBack, onClose }) => {
+  const [form, setForm] = useState(EMPTY_ENQUIRY);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+
+  const handleChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("sending");
+    setError("");
+
+    const limits = pricing.limits
+      .map((l) => `${l.label}: ${limitValue(plan, l.key)}`)
+      .concat(`AI: ${plan.ai}${plan.aiNote ? ` (${plan.aiNote})` : ""}`)
+      .join(", ");
+
+    try {
+      await axios.post(`${API_BASE_URL}/contact`, {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        subject: `${pricing.label} — ${plan.name} Plan Enquiry`,
+        message: [
+          `Plan: ${pricing.label} — ${plan.name} (${plan.price}${plan.period}${plan.priceNote ? `, ${plan.priceNote}` : ""})`,
+          `Included: ${limits}`,
+          `Company: ${form.company}`,
+          `City/Location: ${form.city || "Not specified"}`,
+          `Number of Users: ${form.users || "Not specified"}`,
+          `Requirements: ${form.message || "—"}`,
+        ].join("\n"),
+      });
+      setStatus("success");
+    } catch (err) {
+      setError(err.response?.data?.msg || "Unable to submit your request. Please try again.");
+      setStatus("idle");
+    }
+  };
+
+  if (status === "success") {
+    return (
+      <div className="max-w-xl py-10 mx-auto text-center">
+        <div className="flex items-center justify-center w-16 h-16 mx-auto mb-6 text-2xl rounded-2xl bg-cyan-400/10 text-cyan-300">
+          <FaCheckCircle />
+        </div>
+        <h3 className="text-2xl font-bold text-white md:text-3xl">Request Submitted Successfully!</h3>
+        <p className="mt-4 text-sm leading-7 text-gray-400 md:text-base">
+          Thank you for your interest in Ready Tech Solutions. Our team will
+          review your requirements and contact you shortly.
+        </p>
+        <div className="flex flex-wrap justify-center gap-3 mt-8">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-2 px-6 py-3 font-semibold text-white transition border rounded-xl border-white/10 bg-white/5 hover:bg-white/10"
+          >
+            <FaArrowLeft className="text-sm" />
+            Back to Plans
+          </button>
+          <button
+            onClick={onClose}
+            className="px-6 py-3 font-semibold text-black transition rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:scale-[1.02]"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-2 text-sm text-gray-400 transition hover:text-white"
+      >
+        <FaArrowLeft className="text-xs" />
+        Back to plans
+      </button>
+
+      <div className="grid gap-8 mt-6 lg:grid-cols-[320px_1fr]">
+        {/* Selected plan summary */}
+        <div className="p-6 border h-fit rounded-2xl border-cyan-400/30 bg-cyan-400/[0.05]">
+          <span className="text-xs font-semibold tracking-widest uppercase text-cyan-400">Selected Plan</span>
+          <h4 className="mt-2 text-xl font-bold text-white">{pricing.label} — {plan.name}</h4>
+          <div className="mt-3">
+            <span className="text-2xl font-extrabold text-white">{plan.price}</span>
+            {plan.period && <span className="text-sm text-gray-500">{plan.period}</span>}
+            {plan.priceNote && <p className="mt-1 text-xs text-gray-500">{plan.priceNote}</p>}
+          </div>
+          <div className="pt-4 mt-4 space-y-2.5 border-t border-white/10">
+            {pricing.limits.map((limit) => (
+              <div key={limit.key} className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-gray-400">{limit.label}</span>
+                <span className="font-semibold text-right text-white">{limitValue(plan, limit.key)}</span>
+              </div>
+            ))}
+            <div className="flex items-start justify-between gap-3 text-sm">
+              <span className="text-gray-400">AI</span>
+              <span className="font-semibold text-right text-white">
+                {plan.ai}
+                {plan.aiNote && <span className="block text-xs font-normal text-gray-400">{plan.aiNote}</span>}
+              </span>
+            </div>
+          </div>
+          <p className="flex items-center gap-2 mt-5 text-xs text-gray-400">
+            <FaLayerGroup className="text-cyan-400" />
+            {pricing.summaryNote}
+          </p>
+        </div>
+
+        {/* Enquiry form */}
+        <form onSubmit={handleSubmit} className="grid gap-4 sm:grid-cols-2">
+          {ENQUIRY_FIELDS.map(({ name, label, ...rest }) => (
+            <label key={name} className="text-sm text-gray-300">
+              {label}
+              {rest.required && <span className="text-cyan-400"> *</span>}
+              <input
+                name={name}
+                value={form[name]}
+                onChange={handleChange}
+                placeholder={label}
+                type={rest.type || "text"}
+                className={`${INPUT_CLASS} mt-1.5`}
+                {...rest}
+              />
+            </label>
+          ))}
+
+          <label className="text-sm text-gray-300 sm:col-span-2">
+            Requirements / Message
+            <textarea
+              name="message"
+              rows={4}
+              value={form.message}
+              onChange={handleChange}
+              placeholder="Tell us about your business and what you need"
+              className={`${INPUT_CLASS} mt-1.5 resize-none`}
+            />
+          </label>
+
+          {error && <p className="text-sm text-red-400 sm:col-span-2">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={status === "sending"}
+            className="inline-flex items-center justify-center gap-2 px-6 py-3.5 font-semibold text-black transition rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 hover:scale-[1.01] disabled:opacity-60 disabled:hover:scale-100 sm:col-span-2"
+          >
+            {status === "sending" ? "Submitting..." : "Request Access"}
+            {status !== "sending" && <FaArrowRight className="text-sm" />}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const PlanModal = ({ pricing, onClose }) => {
+  const [selectedPlan, setSelectedPlan] = useState(null);
+  const panelRef = useRef(null);
+
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -357,58 +1163,80 @@ const PlanModal = ({ product, onClose }) => {
     };
   }, [onClose]);
 
+  const selectPlan = (plan) => {
+    setSelectedPlan(plan);
+    panelRef.current?.scrollTo({ top: 0 });
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm"
     >
       <motion.div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`${product.shortTitle} plans`}
+        aria-label={pricing.title}
         initial={{ opacity: 0, y: 30, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 20, scale: 0.97 }}
         transition={{ duration: 0.3 }}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-7xl max-h-[90vh] overflow-y-auto p-6 md:p-10 border rounded-[2rem] border-white/10 bg-[#070b1d]"
+        className="relative w-full max-w-7xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 md:p-10 border rounded-3xl md:rounded-[2rem] border-white/10 bg-[#070b1d]"
       >
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute flex items-center justify-center w-10 h-10 text-gray-300 transition border rounded-xl top-5 right-5 border-white/10 bg-white/5 hover:bg-white/10"
+          className="absolute flex items-center justify-center w-10 h-10 text-gray-300 transition border rounded-xl top-4 right-4 md:top-5 md:right-5 border-white/10 bg-white/5 hover:bg-white/10"
         >
           <FaTimes />
         </button>
 
         <div className="max-w-2xl pr-12">
           <span className="text-sm font-semibold tracking-widest uppercase text-cyan-400">
-            {product.shortTitle} Plans
+            {pricing.title}
           </span>
           <h3 className="mt-2 text-2xl font-bold text-white md:text-3xl">
-            Pick the plan that fits your team
+            {selectedPlan ? "Request access to your plan" : pricing.heading}
           </h3>
-          <p className="mt-3 text-sm leading-6 text-gray-400">
-            Every plan includes secure cloud access. AI points are credits
-            used whenever you use the built-in AI features — upgrade anytime
-            as your team grows.
-          </p>
+          {!selectedPlan && (
+            <p className="mt-3 text-sm leading-6 text-gray-400">{pricing.intro}</p>
+          )}
         </div>
 
-        <div className="grid gap-5 pt-4 mt-8 sm:grid-cols-2 xl:grid-cols-4">
-          {product.plans.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} productId={product.id} />
-          ))}
-        </div>
+        <div className="mt-8">
+          {selectedPlan ? (
+            <EnquiryForm
+              plan={selectedPlan}
+              pricing={pricing}
+              onBack={() => setSelectedPlan(null)}
+              onClose={onClose}
+            />
+          ) : (
+            <>
+              <div className="grid gap-5 pt-4 sm:grid-cols-2 xl:grid-cols-4">
+                {pricing.plans.map((plan) => (
+                  <PlanCard key={plan.id} plan={plan} pricing={pricing} onChoose={selectPlan} />
+                ))}
+              </div>
 
-        <p className="flex items-center gap-2 mt-8 text-xs text-gray-500">
-          <FaShieldAlt className="text-cyan-400" />
-          Prices exclude applicable taxes. Our team will confirm your setup
-          before activation.
-        </p>
+              <div className="p-4 mt-8 space-y-2 border rounded-2xl border-white/10 bg-white/[0.03]">
+                {pricing.notes.map((note) => (
+                  <p key={note} className="flex items-start gap-2 text-xs leading-5 text-gray-400">
+                    <FaShieldAlt className="flex-shrink-0 mt-0.5 text-cyan-400" />
+                    {note}
+                  </p>
+                ))}
+              </div>
+
+              <ComparisonTable pricing={pricing} />
+            </>
+          )}
+        </div>
       </motion.div>
     </motion.div>
   );
@@ -684,7 +1512,7 @@ export default function Products() {
                           <FaArrowRight className="text-sm" />
                         </a>
 
-                        {product.plans && (
+                        {product.pricing && (
                           <button
                             onClick={() => setPlanProduct(product)}
                             className="inline-flex items-center justify-center gap-2 px-6 py-3 font-semibold transition border rounded-xl border-cyan-400/30 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
@@ -999,7 +1827,7 @@ export default function Products() {
       <AnimatePresence>
         {planProduct && (
           <PlanModal
-            product={planProduct}
+            pricing={planProduct.pricing}
             onClose={() => setPlanProduct(null)}
           />
         )}
